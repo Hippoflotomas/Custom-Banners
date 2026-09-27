@@ -1,0 +1,50 @@
+# ---- Visual Studio / Rider ----
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# ---- Build output ----
+bin/
+obj/
+# BaseOutputPath points into Package/, so builds land in Package/Debug and Package/Release
+BannerShare/Package/Debug/
+BannerShare/Package/Release/
+BannerShare/Package/plugins/
+BannerShare/Package/BepInEx/plugins/
+BannerShare/Package/*.zip
+*.mdb
+*.pdb
+# ...but keep the pdb2mdb tool the publish script needs
+!libraries/**
+
+# ---- NuGet ----
+packages/
+*.nupkg
+
+# ---- Unity stub (not used by the build; its Assemblies folder holds
+#      copyrighted Valheim/Unity dlls that must never be published) ----
+JotunnModStubUnity/
+**/Assets/Assemblies/
+Library/
+Temp/
+Logs/
+UserSettings/
+
+# ---- Scratch / test content ----
+# Loose reference images at the repo root
+/*.jpg
+/*.jpeg
+/*.png
+/*.webp
+# Test banner packs
+/banners/
+# Unused large textures in the fallback banner folder
+BannerShare/Package/BepInEx/config/BannerShare/Missing/texture-light-fabric.jpg
+BannerShare/Package/BepInEx/config/BannerShare/Missing/White_banner.png
+
+# ---- OS junk ----
+Thumbs.db
+desktop.ini
+.DS_Store

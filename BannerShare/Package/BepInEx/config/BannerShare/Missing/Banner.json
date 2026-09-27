@@ -1,0 +1,11 @@
+{
+  "displayName": "Error Flag",
+  "description": "you are seeing this because something goofed",
+  "basePrefab": "piece_banner01",
+  "craftingStation": "piece_workbench",
+  "Hidden": true,
+  "requirements": [
+    { "item": "Wood", "amount": 2 },
+    { "item": "LeatherScraps", "amount": 4 }
+  ]
+}
