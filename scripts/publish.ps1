@@ -55,15 +55,35 @@ if ($Target.Equals("Debug")) {
 }
 
 if($Target.Equals("Release")) {
-    Write-Host "Packaging for ThunderStore..."
-    $Package="Package"
-    $PackagePath="$ProjectPath\$Package"
+    # Builds a Thunderstore-ready package in <solution>\publishables:
+    #   publishables\<name>\            unzipped, for checking
+    #   publishables\<name>-<ver>.zip   upload this one
+    Write-Host "Packaging for Thunderstore..."
+    $PackageSource = "$ProjectPath\Package"
+    $Publishables = Join-Path (Resolve-Path "$(Get-Location)\..").Path "publishables"
+    $Staging = "$Publishables\$name"
 
-    Write-Host "$PackagePath\$TargetAssembly"
-    New-Item -Type Directory -Path "$PackagePath\plugins" -Force
-    Copy-Item -Path "$TargetPath\$TargetAssembly" -Destination "$PackagePath\plugins\$TargetAssembly" -Force
-    Copy-Item -Path "$ProjectPath\README.md" -Destination "$PackagePath\README.md" -Force
-    Compress-Archive -Path "$PackagePath\*" -DestinationPath "$TargetPath\$name.zip" -Force
+    $manifest = Get-Content "$PackageSource\manifest.json" -Raw | ConvertFrom-Json
+    $version = $manifest.version_number
+
+    # Fresh staging folder every build so nothing stale gets shipped
+    if (Test-Path $Staging) { Remove-Item $Staging -Recurse -Force }
+    New-Item -Type Directory -Path "$Staging\plugins" -Force | Out-Null
+
+    foreach ($file in "manifest.json", "icon.png", "README.md", "CHANGELOG.md") {
+        if (!(Test-Path "$PackageSource\$file")) { Write-Error -ErrorAction Stop -Message "$PackageSource\$file is missing" }
+        Copy-Item -Path "$PackageSource\$file" -Destination $Staging -Force
+    }
+    Copy-Item -Path "$TargetPath\$TargetAssembly" -Destination "$Staging\plugins\$TargetAssembly" -Force
+
+    # ZipFile rather than Compress-Archive: Windows PowerShell's Compress-Archive writes
+    # backslashes into zip paths, which breaks the folder layout for Thunderstore/r2modman
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = "$Publishables\$name-$version.zip"
+    if (Test-Path $zip) { Remove-Item $zip -Force }
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($Staging, $zip)
+
+    Write-Host "Thunderstore package ready: $zip"
 }
 
 # Pop Location

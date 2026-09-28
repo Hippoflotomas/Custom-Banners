@@ -48,3 +48,7 @@ BannerShare/Assets/Missing/White_banner.png
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# ---- Release drop folder (contents not tracked) ----
+/publishables/*
+!/publishables/README.md

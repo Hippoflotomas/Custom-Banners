@@ -12,6 +12,7 @@ using HarmonyLib;
 using UnityEngine.Diagnostics;
 using UnityEngine;
 using System.IO.Compression;
+using System.Reflection;
 
 namespace BannerShare
 {
@@ -52,7 +53,6 @@ namespace BannerShare
         private Harmony _harmony;
 
         private const string BannerNameZdoKey = "BannerShare_Name";
-        private static readonly HashSet<string> _substitutedBannerNames = new HashSet<string>();
 
         [HarmonyPatch(typeof(Piece), nameof(Piece.SetCreator))]
         public static class Piece_SetCreator_BannerTag_Patch
@@ -80,8 +80,13 @@ namespace BannerShare
         {
             private static readonly int MissingBannerHash = (PiecePrefabPrefix + FallBackBannerName).GetStableHashCode();
 
-            private static void Prefix(ZDO zdo)
+            // Lets us point the ZDO at the placeholder just while the object spawns, then put it back,
+            // without SetPrefab() - so the saved world keeps the real banner. Null if the game renames it.
+            private static readonly FieldInfo ZdoPrefabField = AccessTools.Field(typeof(ZDO), "m_prefab");
+
+            private static void Prefix(ZDO zdo, out int __state)
             {
+                __state = 0;
                 string baseName = zdo.GetString(BannerNameZdoKey, "");
                 if (string.IsNullOrEmpty(baseName))
                     return;
@@ -90,25 +95,83 @@ namespace BannerShare
                 if (ZNetScene.instance.GetPrefab(realHash) != null)
                 {
                     if (zdo.GetPrefab() != realHash)
-                        zdo.SetPrefab(realHash); // real banner is available (again) - point back at it
+                        zdo.SetPrefab(realHash); // repairs banners an older version saved as the placeholder
                     return;
                 }
 
+                MissingBannerNotices.Queue(baseName);
+
                 if (zdo.GetPrefab() == MissingBannerHash)
-                    return; // already substituted, nothing more to do
+                    return; // saved as the placeholder by an older version - already spawns as one
 
-                zdo.SetPrefab(MissingBannerHash);
-
-                if (!_substitutedBannerNames.Contains(baseName))
+                if (ZdoPrefabField != null)
                 {
-                    _substitutedBannerNames.Add(baseName);
-                    Jotunn.Logger.LogInfo($"[BannerShare] Missing banner '{baseName}' isn't installed locally, swapping with placeholder.");
-                    if (Player.m_localPlayer != null && Chat.instance != null)
-                        Chat.instance.AddString($"[BannerShare] You don't have the banner '{baseName}'. Ask around for a copy! I have put up a placeholder for you.");
+                    __state = zdo.GetPrefab();
+                    ZdoPrefabField.SetValue(zdo, MissingBannerHash);
                 }
+                else
+                {
+                    zdo.SetPrefab(MissingBannerHash); // fallback: old behaviour
+                }
+            }
+
+            // Finalizer rather than Postfix so the real prefab is restored even if spawning throws
+            private static void Finalizer(ZDO zdo, int __state)
+            {
+                if (__state != 0)
+                    ZdoPrefabField.SetValue(zdo, __state);
             }
         }
 
+        // Collects missing banners as they spawn in, then tells the player once they're in the world:
+        // one centre-screen message, and one chat line per banner.
+        private static class MissingBannerNotices
+        {
+            // Wait for this long with no new missing banners before announcing, so a
+            // whole base loading in gives one message instead of several
+            private const float SettleSeconds = 2f;
+
+            private static readonly HashSet<string> _noticed = new HashSet<string>();
+            private static readonly List<string> _pending = new List<string>();
+            private static float _lastQueuedTime;
+
+            public static void Queue(string baseName)
+            {
+                if (!_noticed.Add(baseName))
+                    return;
+
+                _pending.Add(baseName);
+                _lastQueuedTime = Time.time;
+                Jotunn.Logger.LogInfo($"[BannerShare] Missing banner '{baseName}' isn't installed locally, swapping with placeholder.");
+            }
+
+            public static void Update()
+            {
+                if (ZNet.instance == null)
+                {
+                    // Not in a world (main menu) - start fresh for the next one
+                    _noticed.Clear();
+                    _pending.Clear();
+                    return;
+                }
+
+                if (_pending.Count == 0 || Time.time - _lastQueuedTime < SettleSeconds)
+                    return;
+
+                // Objects around the spawn point load before the player exists - hold on to them until then
+                if (Player.m_localPlayer == null || Chat.instance == null || MessageHud.instance == null)
+                    return;
+
+                string count = _pending.Count == 1 ? "1 banner file" : $"{_pending.Count} banner files";
+                MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, $"You are missing {count} - check your chat log");
+
+                foreach (var name in _pending)
+                    Chat.instance.AddString($"[BannerShare] Missing banner: {name}");
+                Chat.instance.AddString("[BannerShare] Ask around the server for these banner packs, drop the zips in Documents\\Valheim Custom Banners, then restart the game.");
+
+                _pending.Clear();
+            }
+        }
 
         private static readonly Dictionary<string, string> LayerFileToShaderProperty = new Dictionary<string, string>
         {
@@ -589,6 +652,11 @@ namespace BannerShare
             }
         }
 #endif
+
+        private void Update()
+        {
+            MissingBannerNotices.Update();
+        }
 
         private void Awake()
         {
