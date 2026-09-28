@@ -263,49 +263,203 @@ namespace BannerShare
             return Sprite.Create(iconTexture, new Rect(0, 0, iconTexture.width, iconTexture.height), new Vector2(0.5f, 0.5f));
         }
         
-        private void AddCustomImageLayer(GameObject bannerPrefab, string bannerFolder, string baseName)
-        {
-            string mainTexPath = FindFileIgnoreCase(bannerFolder, "MainTex.png");
-            if (mainTexPath == null)
-                return;
+        private const string ClothShaderName = "Custom/Vegetation";
 
-            Renderer clothRenderer = bannerPrefab.GetComponentsInChildren<Renderer>(true)
-                .FirstOrDefault(r => r.sharedMaterial.shader.name == "Custom/Vegetation");
-            if (clothRenderer == null)
+        // Applies the banner's texture layers to every cloth mesh on the prefab.
+        // Each cloth mesh gets new UVs so the image covers the whole cloth, whatever
+        // shape or orientation it is. Destruction fragments are left vanilla.
+        private void ApplyBannerImage(GameObject bannerPrefab, string bannerFolder, string baseName)
+        {
+            // Load each layer once and share it between all cloth renderers
+            var layerTextures = new Dictionary<string, Texture2D>();
+            foreach (var kvp in LayerFileToShaderProperty)
             {
-                Logger.LogWarning($"[BannerShare] '{baseName}' has no cloth renderer to overlay - skipping image layer.");
+                string path = FindFileIgnoreCase(bannerFolder, kvp.Key + ".png");
+                if (path != null)
+                    layerTextures[kvp.Value] = AssetUtils.LoadTexture(path, relativePath: false);
+            }
+            if (layerTextures.Count == 0)
+            {
+                Logger.LogWarning($"[BannerShare] '{baseName}' has no texture files - it will look like the vanilla banner.");
                 return;
             }
 
-            var meshFilter = clothRenderer.GetComponent<MeshFilter>();
-            var originalMesh = meshFilter.sharedMesh;
+            var clothRenderers = GetClothRenderers(bannerPrefab);
+            if (clothRenderers.Count == 0)
+            {
+                Logger.LogWarning($"[BannerShare] '{baseName}': base prefab has no '{ClothShaderName}' cloth to put the image on - skipping.");
+                return;
+            }
 
-            var customMesh = new Mesh();
-            customMesh.vertices = originalMesh.vertices;
-            customMesh.triangles = originalMesh.triangles;
-            customMesh.normals = originalMesh.normals;
-            customMesh.colors = originalMesh.colors; // carries any wind-weighting data along, if it's there
+            float mirror = 0f; // set by the first cloth so every cloth reads the same way round
+            bool aspectChecked = false;
+            foreach (var renderer in clothRenderers)
+            {
+                if (!RemapClothUVs(renderer, baseName, ref mirror, out float clothWidthOverHeight))
+                    continue;
 
-            var bounds = originalMesh.bounds;
-            var vertices = originalMesh.vertices;
-            var newUVs = new Vector2[vertices.Length];
+                if (!aspectChecked && layerTextures.TryGetValue("_MainTex", out var mainTex))
+                {
+                    WarnIfAspectMismatch(baseName, mainTex, clothWidthOverHeight);
+                    aspectChecked = true;
+                }
+            }
+
+            // One material copy per original cloth material, carrying the custom textures
+            var materialCopies = new Dictionary<Material, Material>();
+            foreach (var renderer in clothRenderers)
+            {
+                var materials = renderer.sharedMaterials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    var original = materials[i];
+                    if (original == null || original.shader.name != ClothShaderName)
+                        continue;
+
+                    if (!materialCopies.TryGetValue(original, out var copy))
+                    {
+                        copy = new Material(original) { name = original.name + "_" + baseName };
+                        foreach (var tex in layerTextures)
+                        {
+                            if (copy.HasProperty(tex.Key))
+                                copy.SetTexture(tex.Key, tex.Value);
+                            else
+                                Logger.LogWarning($"[BannerShare] '{baseName}': cloth shader has no '{tex.Key}' slot - skipping that layer.");
+                        }
+                        materialCopies[original] = copy;
+                    }
+                    materials[i] = copy;
+                }
+                renderer.sharedMaterials = materials;
+            }
+
+            Logger.LogInfo($"[BannerShare] Applied {layerTextures.Count} texture layer(s) to {clothRenderers.Count} cloth mesh(es) on '{baseName}'.");
+        }
+
+        // All renderers using the cloth shader, excluding the pieces that fly off when the banner is destroyed.
+        private static List<Renderer> GetClothRenderers(GameObject prefab)
+        {
+            var fragmentRoots = new HashSet<Transform>();
+            var wearNTear = prefab.GetComponent<WearNTear>();
+            if (wearNTear != null && wearNTear.m_fragmentRoots != null)
+            {
+                foreach (var root in wearNTear.m_fragmentRoots)
+                    if (root != null)
+                        fragmentRoots.Add(root.transform);
+            }
+
+            var result = new List<Renderer>();
+            foreach (var renderer in prefab.GetComponentsInChildren<Renderer>(true))
+            {
+                var meshFilter = renderer.GetComponent<MeshFilter>();
+                if (meshFilter == null || meshFilter.sharedMesh == null)
+                    continue;
+                if (!renderer.sharedMaterials.Any(m => m != null && m.shader.name == ClothShaderName))
+                    continue;
+                if (IsDestructionFragment(renderer.transform, fragmentRoots, prefab.transform))
+                    continue;
+                result.Add(renderer);
+            }
+            return result;
+        }
+
+        private static bool IsDestructionFragment(Transform t, HashSet<Transform> fragmentRoots, Transform prefabRoot)
+        {
+            for (; t != null && t != prefabRoot; t = t.parent)
+            {
+                if (fragmentRoots.Contains(t) || t.name == "destruction")
+                    return true;
+            }
+            return false;
+        }
+
+        // Projects the image flat onto the cloth: V runs bottom to top, U runs left to right
+        // as seen from the side the cloth faces. Works in the mesh's own space, so a copy of
+        // the cloth rotated 180 degrees (the back face) also reads correctly from its side.
+        private bool RemapClothUVs(Renderer renderer, string baseName, ref float mirror, out float clothWidthOverHeight)
+        {
+            clothWidthOverHeight = 0f;
+            var meshFilter = renderer.GetComponent<MeshFilter>();
+            Mesh original = meshFilter.sharedMesh;
+            Vector3[] vertices = original.vertices;
+            if (vertices.Length == 0)
+                return false;
+
+            Vector3 up = Vector3.up;
+            Vector3 right = Vector3.Cross(GetClothFacing(original), up).normalized;
+
+            // The first cloth keeps the old left-to-right = +Z direction so banners that already
+            // look right don't flip; every other cloth follows the same rule relative to its facing.
+            if (mirror == 0f)
+                mirror = Vector3.Dot(right, Vector3.forward) < 0f ? -1f : 1f;
+            right *= mirror;
+
+            float minU = float.MaxValue, maxU = float.MinValue;
+            foreach (var v in vertices)
+            {
+                float d = Vector3.Dot(v, right);
+                if (d < minU) minU = d;
+                if (d > maxU) maxU = d;
+            }
+            Bounds bounds = original.bounds;
+            float width = maxU - minU;
+            float height = bounds.size.y;
+            if (width < 0.0001f || height < 0.0001f)
+            {
+                Logger.LogWarning($"[BannerShare] '{baseName}': cloth mesh '{original.name}' is flat in the wrong direction - skipping it.");
+                return false;
+            }
+
+            var uvs = new Vector2[vertices.Length];
             for (int i = 0; i < vertices.Length; i++)
             {
-                newUVs[i] = new Vector2(
-                    (vertices[i].z - bounds.min.z) / bounds.size.z,
-                    (vertices[i].y - bounds.min.y) / bounds.size.y
-                );
+                uvs[i] = new Vector2(
+                    (Vector3.Dot(vertices[i], right) - minU) / width,
+                    (vertices[i].y - bounds.min.y) / height);
             }
-            customMesh.uv = newUVs;
 
-            meshFilter.mesh = customMesh; // .mesh (not .sharedMesh) auto-instances this, so the vanilla asset stays untouched
+            // Full copy keeps sub-meshes, vertex colours (wind weighting), uv2 etc.
+            Mesh custom = UnityEngine.Object.Instantiate(original);
+            custom.name = original.name + "_" + baseName;
+            custom.uv = uvs;
+            custom.RecalculateTangents(); // bump map lighting depends on tangents matching the UVs
+            meshFilter.sharedMesh = custom;
 
-            var texture = AssetUtils.LoadTexture(mainTexPath, relativePath: false);
-            clothRenderer.material.SetTexture("_MainTex", texture);
-
-            Logger.LogInfo($"[BannerShare] Rebuilt UVs and applied custom image for '{baseName}'.");
+            float worldWidth = renderer.transform.TransformVector(right * width).magnitude;
+            float worldHeight = renderer.transform.TransformVector(up * height).magnitude;
+            clothWidthOverHeight = worldWidth / worldHeight;
+            return true;
         }
-        
+
+        // Which horizontal direction the cloth faces, from its averaged normals.
+        // Falls back to the mesh's thinnest horizontal axis if the normals cancel out.
+        private static Vector3 GetClothFacing(Mesh mesh)
+        {
+            Vector3[] normals = mesh.normals;
+            Vector3 sum = Vector3.zero;
+            foreach (var n in normals)
+                sum += n;
+            sum.y = 0f;
+
+            if (normals.Length > 0 && sum.magnitude > 0.1f * normals.Length)
+                return sum.normalized;
+
+            Vector3 size = mesh.bounds.size;
+            return size.x <= size.z ? Vector3.right : Vector3.forward;
+        }
+
+        private void WarnIfAspectMismatch(string baseName, Texture2D mainTex, float clothWidthOverHeight)
+        {
+            float imageWidthOverHeight = (float)mainTex.width / mainTex.height;
+            if (Mathf.Abs(imageWidthOverHeight / clothWidthOverHeight - 1f) <= 0.3f)
+                return;
+
+            int suggestedWidth = Mathf.RoundToInt(mainTex.height * clothWidthOverHeight);
+            Logger.LogWarning($"[BannerShare] '{baseName}': MainTex.png is {mainTex.width}x{mainTex.height} but this banner's cloth is " +
+                              $"{clothWidthOverHeight:0.00}:1 (width:height), so the image will be stretched. " +
+                              $"For this base prefab aim for about {suggestedWidth}x{mainTex.height}.");
+        }
+
         private void LoadAndRegisterBanners()
         {
             // OnVanillaPrefabsAvailable fires every time the main menu loads (e.g. after logging out).
@@ -364,8 +518,10 @@ namespace BannerShare
                 return;
             }
 
-            ApplyTextureLayers(bannerPrefab, bannerFolder, baseName);
-            AddCustomImageLayer(bannerPrefab, bannerFolder, baseName); //temp
+#if DEBUG
+            DumpPrefabStructure(bannerPrefab, baseSource);
+#endif
+            ApplyBannerImage(bannerPrefab, bannerFolder, baseName);
             var icon = LoadBannerIcon(bannerFolder, baseName);
 
             var pieceConfig = new PieceConfig
@@ -375,6 +531,7 @@ namespace BannerShare
                 PieceTable = PieceTables.Hammer,
                 Description = string.IsNullOrWhiteSpace(definition.Description) ? definition.DisplayName : definition.Description,
                 Icon = icon,
+                Category = "Custom Banners",
                 Enabled = !definition.Hidden,
                 Requirements = definition.Requirements
                     .Select(r => new RequirementConfig { Item = r.Item, Amount = r.Amount })
@@ -385,32 +542,54 @@ namespace BannerShare
             Logger.LogInfo($"[BannerShare] Registered '{definition.DisplayName}' from '{baseName}'.");
         }
 
-        private void ApplyTextureLayers(GameObject bannerPrefab, string bannerFolder, string baseName)
+#if DEBUG
+        // Diagnostic: logs how a base banner prefab is built so we can see why some
+        // bases behave differently. Runs once per base prefab, Debug builds only.
+        private static readonly HashSet<string> _dumpedBasePrefabs = new HashSet<string>();
+
+        private void DumpPrefabStructure(GameObject prefab, string baseSource)
         {
-            foreach (var renderer in bannerPrefab.GetComponentsInChildren<Renderer>(true))
+            if (!_dumpedBasePrefabs.Add(baseSource))
+                return;
+
+            Logger.LogInfo($"[BannerShare][Dump] ===== {baseSource} =====");
+            Logger.LogInfo($"[BannerShare][Dump] LODGroup: {(prefab.GetComponentInChildren<LODGroup>(true) != null)}, Cloth components: {prefab.GetComponentsInChildren<Cloth>(true).Length}");
+
+            foreach (var renderer in prefab.GetComponentsInChildren<Renderer>(true))
             {
-                
-                if (renderer.sharedMaterial.shader.name != "Custom/Vegetation")
-                    continue;
+                string path = renderer.name;
+                for (var t = renderer.transform.parent; t != null && t != prefab.transform; t = t.parent)
+                    path = t.name + "/" + path;
 
-                foreach (var kvp in LayerFileToShaderProperty)
+                Mesh mesh = null;
+                if (renderer is SkinnedMeshRenderer smr)
+                    mesh = smr.sharedMesh;
+                else
+                    mesh = renderer.GetComponent<MeshFilter>()?.sharedMesh;
+
+                string meshInfo = mesh == null
+                    ? "no mesh"
+                    : $"mesh '{mesh.name}' verts={mesh.vertexCount} bounds size={mesh.bounds.size} readable={mesh.isReadable}";
+
+                Logger.LogInfo($"[BannerShare][Dump] {renderer.GetType().Name} '{path}' enabled={renderer.enabled} localRot={renderer.transform.localEulerAngles} scale={renderer.transform.localScale} {meshInfo}");
+
+                foreach (var mat in renderer.sharedMaterials)
                 {
-                    string layerPngPath = FindFileIgnoreCase(bannerFolder, kvp.Key + ".png");
-                    if (layerPngPath == null)
-                        continue;
-
-                    if (!renderer.sharedMaterial.HasProperty(kvp.Value))
+                    if (mat == null)
                     {
-                        Logger.LogWarning($"[BannerShare] '{baseName}' has {kvp.Key}.png but the shader has no '{kvp.Value}' slot - Skipping.");
+                        Logger.LogInfo("[BannerShare][Dump]     material: <null>");
                         continue;
                     }
-
-                    var texture = AssetUtils.LoadTexture(layerPngPath, relativePath: false);
-                    renderer.material.SetTexture(kvp.Value, texture);
-                    Logger.LogInfo($"[BannerShare] Applied {kvp.Key}.png to '{kvp.Value}' on '{baseName}'.");
+                    var slots = LayerFileToShaderProperty.Values
+                        .Select(prop => mat.HasProperty(prop)
+                            ? $"{prop}={(mat.GetTexture(prop) != null ? mat.GetTexture(prop).name : "empty")}"
+                            : $"{prop}=n/a");
+                    Logger.LogInfo($"[BannerShare][Dump]     material '{mat.name}' shader '{mat.shader.name}' {string.Join(" ", slots)}");
                 }
             }
         }
+#endif
+
         private void Awake()
         {
             // Jotunn comes with its own Logger class to provide a consistent Log style for all mods using it

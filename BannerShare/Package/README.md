@@ -18,7 +18,16 @@ will throw errors if your friend builds a banner and you don't have the files.
 
 The zip file you drop into your documents folder needs to have the following files:
 ### MainTex.png
-this is the image file you want on the banner. Resolution is not super important, but the image ratio needs to be twice as tall as it is wide.
+this is the image file you want on the banner. Resolution is not super important, but the image shape (width:height) should match the banner you base it on (`basePrefab` in Banner.json), otherwise it gets stretched:
+
+| basePrefab | Shape (width:height) | Example size |
+|---|---|---|
+| piece_banner01 (and the other standard banners) | about 2:5 | 400 x 1000 |
+| piece_cloth_hanging_door | 1:2 | 500 x 1000 |
+| piece_cloth_hanging_door_blue | about 1:5 | 200 x 1000 |
+| piece_cloth_hanging_door_blue2 | about 3:1 | 1500 x 500 |
+
+If the shape is well off, the BepInEx log will warn you and suggest a size.
 ### BumpMap.png
 This is the bump map for the banner. try to keep it to the same resolution as the MainTex.png
 ### Banner.json
