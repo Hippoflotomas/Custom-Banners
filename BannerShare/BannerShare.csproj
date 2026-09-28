@@ -56,13 +56,20 @@
 
   <ItemGroup>
     <None Include="app.config" />
-    <None Include="packages.config" />
     <None Include="README.md" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="JotunnLib" Version="2.27.1" />
+    <PackageReference Include="JotunnLib" Version="2.30.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <!-- Fallback "Missing" banner, baked into the dll and written out to
+       BepInEx/config/BannerShare/Banners/Missing at startup -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Missing\Banner.json;Assets\Missing\MainTex.png;Assets\Missing\BumpMap.png;Assets\Missing\EmissiveTex.png;Assets\Missing\MetalTex.png;Assets\Missing\MossTex.png;Assets\Missing\Icon.png">
+      <LogicalName>BannerShare.Missing.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <PropertyGroup>

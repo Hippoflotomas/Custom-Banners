@@ -41,8 +41,8 @@ UserSettings/
 # Test banner packs
 /banners/
 # Unused large textures in the fallback banner folder
-BannerShare/Package/BepInEx/config/BannerShare/Missing/texture-light-fabric.jpg
-BannerShare/Package/BepInEx/config/BannerShare/Missing/White_banner.png
+BannerShare/Assets/Missing/texture-light-fabric.jpg
+BannerShare/Assets/Missing/White_banner.png
 
 # ---- OS junk ----
 Thumbs.db

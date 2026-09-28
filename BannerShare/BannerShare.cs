@@ -16,18 +16,19 @@ using System.IO.Compression;
 namespace BannerShare
 {
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
-    [BepInDependency(Jotunn.Main.ModGuid)]
+    [BepInDependency(Jotunn.Main.ModGuid, "2.30.2")]
     [NetworkCompatibility(CompatibilityLevel.EveryoneMustHaveMod, VersionStrictness.Minor)]
 
     internal class BannerShare : BaseUnityPlugin
     {
         public const string PluginGUID = "com.jotunn.BannerShare";
         public const string PluginName = "BannerShare";
-        public const string PluginVersion = "1.1.2";
+        public const string PluginVersion = "1.1.3";
 
         public const string PiecePrefabPrefix = "BannerShare_";
         public const string VanillaBannerSource = "piece_banner01";
         private const string FallBackBannerName = "Missing";
+        private const string FallBackResourcePrefix = "BannerShare.Missing.";
 
         // Use this class to add your own localization to the game
         // https://valheim-modding.github.io/Jotunn/tutorials/localization.html
@@ -125,6 +126,52 @@ namespace BannerShare
             return path;
         }
 
+        // Finds a file in a folder regardless of capitalisation (Icon.png / icon.png / ICON.PNG).
+        // Windows doesn't care, but Linux dedicated servers do.
+        private static string FindFileIgnoreCase(string folder, string fileName)
+        {
+            string exact = Path.Combine(folder, fileName);
+            if (File.Exists(exact))
+                return exact;
+
+            return Directory.GetFiles(folder)
+                .FirstOrDefault(f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Writes the placeholder banner that is embedded in the dll out to Banners/Missing,
+        // overwriting it each launch so it always matches this version of the mod.
+        private void WriteFallbackBanner(string bannersFolder)
+        {
+            string target = Path.Combine(bannersFolder, FallBackBannerName);
+            Directory.CreateDirectory(target);
+
+            var assembly = typeof(BannerShare).Assembly;
+            int written = 0;
+            foreach (string resourceName in assembly.GetManifestResourceNames())
+            {
+                if (!resourceName.StartsWith(FallBackResourcePrefix, StringComparison.Ordinal))
+                    continue;
+
+                string fileName = resourceName.Substring(FallBackResourcePrefix.Length);
+                try
+                {
+                    using (var stream = assembly.GetManifestResourceStream(resourceName))
+                    using (var file = File.Create(Path.Combine(target, fileName)))
+                        stream.CopyTo(file);
+                    written++;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"[BannerShare] Failed to write fallback file '{fileName}': {ex.Message}");
+                }
+            }
+
+            if (written == 0)
+                Logger.LogError("[BannerShare] No embedded fallback banner files found in the dll - placeholder banner will be missing.");
+            else
+                Logger.LogInfo($"[BannerShare] Installed fallback banner '{FallBackBannerName}' ({written} files) to '{target}'.");
+        }
+
         private string GetBannerDropFolderPath()
         {
             string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
@@ -188,7 +235,7 @@ namespace BannerShare
             foreach (var existingFolder in Directory.GetDirectories(bannersFolder))
             {
                 string name = Path.GetFileName(existingFolder);
-                if (name == FallBackBannerName)
+                if (string.Equals(name, FallBackBannerName, StringComparison.OrdinalIgnoreCase))
                     continue; // permanent fallback banner, do not kill
 
                 if (!shouldExist.Contains(name))
@@ -208,8 +255,8 @@ namespace BannerShare
 
         private Sprite LoadBannerIcon(string bannerFolder, string baseName)
         {
-            string iconPath = Path.Combine(bannerFolder, "icon.png");
-            if (!File.Exists(iconPath))
+            string iconPath = FindFileIgnoreCase(bannerFolder, "Icon.png");
+            if (iconPath == null)
                 return null;
 
             var iconTexture = AssetUtils.LoadTexture(iconPath, relativePath: false);
@@ -218,8 +265,8 @@ namespace BannerShare
         
         private void AddCustomImageLayer(GameObject bannerPrefab, string bannerFolder, string baseName)
         {
-            string mainTexPath = Path.Combine(bannerFolder, "MainTex.png");
-            if (!File.Exists(mainTexPath))
+            string mainTexPath = FindFileIgnoreCase(bannerFolder, "MainTex.png");
+            if (mainTexPath == null)
                 return;
 
             Renderer clothRenderer = bannerPrefab.GetComponentsInChildren<Renderer>(true)
@@ -267,6 +314,7 @@ namespace BannerShare
 
             string folder = GetBannerFolderPath();
             SyncBannersFromDropFolder(folder);
+            WriteFallbackBanner(folder);
             Logger.LogInfo($"[BannerShare] scanning folder {folder}");
 
            var bannerFolders = Directory.GetDirectories(folder);
@@ -275,11 +323,11 @@ namespace BannerShare
             foreach (var bannerFolder in bannerFolders)
             {
                 string baseName = Path.GetFileName(bannerFolder);
-                string jsonPath = Path.Combine(bannerFolder, "banner.json");
+                string jsonPath = FindFileIgnoreCase(bannerFolder, "Banner.json");
 
-                if (!File.Exists(jsonPath))         //logic for missing json file
+                if (jsonPath == null)         //logic for missing json file
                 {
-                    Logger.LogWarning($"[BannerShare] Skipping '{baseName}' banner.json missing from it's folder.");
+                    Logger.LogWarning($"[BannerShare] Skipping '{baseName}' - Banner.json missing from its folder.");
                     continue;
                 }
 
@@ -290,7 +338,7 @@ namespace BannerShare
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError($"[BannerShare] The file '{baseName}/banner.json' is wrong: {ex.Message}");
+                    Logger.LogError($"[BannerShare] The file '{baseName}/Banner.json' is wrong: {ex.Message}");
                     continue;
                 }
 
@@ -347,8 +395,8 @@ namespace BannerShare
 
                 foreach (var kvp in LayerFileToShaderProperty)
                 {
-                    string layerPngPath = Path.Combine(bannerFolder, kvp.Key + ".png");
-                    if (!File.Exists(layerPngPath))
+                    string layerPngPath = FindFileIgnoreCase(bannerFolder, kvp.Key + ".png");
+                    if (layerPngPath == null)
                         continue;
 
                     if (!renderer.sharedMaterial.HasProperty(kvp.Value))
