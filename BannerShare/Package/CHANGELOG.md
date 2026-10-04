@@ -1,3 +1,7 @@
+## Version 1.1.4
+Extracted banners now live in BepInEx/cache/BannerShare/Banners instead of BepInEx/config. The old config copy is removed automatically on first launch.
+Quieter startup log: one "Loaded X banner(s)" line instead of several lines per banner. Per-banner detail is still available at Debug log level.
+
 ## Version 1.1.3
 Fallback "Missing" banner is now built into the dll, so it always installs to the right place.
 Banner file names (Banner.json, Icon.png, MainTex.png, etc.) are no longer case sensitive.
