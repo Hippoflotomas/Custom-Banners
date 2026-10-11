@@ -1,3 +1,7 @@
+## Version 1.2.0
+New standing banner: a 4 m war standard on an iron pole with a stone foot, modelled for BannerShare. Use `"basePrefab": "StandardLarge"` in Banner.json; images should be 2:3 (e.g. 1024 x 1536). It stands on the ground, on floors and on slopes.
+Everyone on a server needs 1.2.0 to see standing banners.
+
 ## Version 1.1.4
 Extracted banners now live in BepInEx/cache/BannerShare/Banners instead of BepInEx/config. The old config copy is removed automatically on first launch.
 Quieter startup log: one "Loaded X banner(s)" line instead of several lines per banner. Per-banner detail is still available at Debug log level.

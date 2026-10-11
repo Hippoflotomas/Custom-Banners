@@ -24,7 +24,7 @@ namespace BannerShare
     {
         public const string PluginGUID = "com.jotunn.BannerShare";
         public const string PluginName = "BannerShare";
-        public const string PluginVersion = "1.1.4";
+        public const string PluginVersion = "1.2.0";
 
         public const string PiecePrefabPrefix = "BannerShare_";
         public const string VanillaBannerSource = "piece_banner01";

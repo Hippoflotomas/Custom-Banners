@@ -2,6 +2,8 @@
 
 Add your own custom banners to Valheim, and share them with your friends as simple zip files.
 
+Put your banner on any vanilla banner shape, or on BannerShare's own **standing banner**: a 4 m tall war standard on an iron pole with a stone foot, for planting in the ground or on a floor.
+
 Big thanks to Liz for teaching me what a bump map actually does!
 
 ## Installing banners
@@ -76,8 +78,11 @@ The shape of `MainTex.png` (width:height) should match the vanilla banner you ba
 | `piece_cloth_hanging_door` | 1:2 | 500 x 1000 |
 | `piece_cloth_hanging_door_blue` | about 1:5 | 200 x 1000 |
 | `piece_cloth_hanging_door_blue2` | about 3:1 | 1500 x 500 |
+| `StandardLarge` (BannerShare's standing banner) | exactly 2:3 | 1024 x 1536 |
 
 If the shape is well off, the BepInEx log (`BepInEx\LogOutput.log`) will warn you and suggest a size.
+
+**Transparent pixels are cut out of the cloth.** To give a banner a pointed tail, a swallowtail or a ragged edge, paint those parts of `MainTex.png` fully transparent.
 
 ### Banner.json
 
@@ -103,7 +108,7 @@ Copy this and change the values:
 |---|---|
 | `displayName` | The name shown in the hammer menu. |
 | `description` | The text under the name. If left empty, the display name is used. |
-| `basePrefab` | Which vanilla banner to copy: its shape, size and where it snaps. Defaults to `piece_banner01`. See the picture shape table above. |
+| `basePrefab` | Which banner to copy: its shape, size and where it can be placed. Use a vanilla banner's name, or `StandardLarge` for BannerShare's standing banner. Defaults to `piece_banner01`. See the picture shape table above. |
 | `craftingStation` | What the player must be near to build it, e.g. `piece_workbench`, `forge`, `piece_stonecutter`, `piece_artisanstation`, `blackforge`, `piece_magetable`. Leave empty (`""`) for none. |
 | `hidden` | `true` hides it from the hammer menu. It still loads, so banners already placed still show. |
 | `requirements` | The build cost. `item` uses Valheim's internal item names (e.g. `Wood`, `FineWood`, `LeatherScraps`, `Coal`, `Raspberry`, `Blueberries`). Search "Valheim item IDs" for a full list. |
