@@ -64,6 +64,14 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
+  <!-- Custom banner shapes, built in the BannerShareAssets Unity project (Assets > Build AssetBundles)
+       and copied to Assets\Bundles\bannershare -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Bundles\bannershare">
+      <LogicalName>BannerShare.Bundles.bannershare</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- Fallback "Missing" banner, baked into the dll and written out to
        BepInEx/cache/BannerShare/Banners/Missing at startup -->
   <ItemGroup>

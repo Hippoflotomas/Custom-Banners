@@ -568,6 +568,7 @@ namespace BannerShare
             PrefabManager.OnVanillaPrefabsAvailable -= LoadAndRegisterBanners;
 
             RemoveLegacyConfigBanners();
+            CustomBannerBases.Build(ClothShaderName);
             string folder = GetBannerFolderPath();
             SyncBannersFromDropFolder(folder);
             WriteFallbackBanner(folder);
@@ -632,7 +633,10 @@ namespace BannerShare
                 return false;
             }
 
-            var bannerPrefab = PrefabManager.Instance.CreateClonedPrefab(prefabName, baseSource);
+            // Shapes shipped in BannerShare's own asset bundle are checked before vanilla prefab names
+            var bannerPrefab = CustomBannerBases.TryGetTemplate(baseSource, out var customBase)
+                ? PrefabManager.Instance.CreateClonedPrefab(prefabName, customBase)
+                : PrefabManager.Instance.CreateClonedPrefab(prefabName, baseSource);
             if (bannerPrefab == null)
             {
                 Logger.LogError($"[BannerShare] Could not clone '{baseSource}' for banner '{baseName}' - Check the vanilla prefab name and try again.");

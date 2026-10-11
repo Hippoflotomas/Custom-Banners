@@ -14,6 +14,18 @@ The banners show up in the hammer menu. To remove a banner, delete its zip and r
 
 **Everyone on the server needs the same banner zips.** If a friend places a banner you don't have, you'll see a bright placeholder banner in its place, a message saying how many banners you're missing, and one chat line per missing banner telling you its name. Ask around the server for the zip, add it, and restart; the real banner comes back.
 
+## Making banners the easy way
+
+Don't want to build zips by hand? **[Valheim Pack Builder](https://github.com/Hippoflotomas/Custom-Valheim-Tool/releases/latest)** is a companion tool that does it for you:
+
+- Fill in a form for the banner's name, recipe and base banner. Picking a base banner fills in its vanilla build cost.
+- Load a PNG and crop it to the banner's shape: drag, zoom, auto-fit, rotate and straighten.
+- Export a ready-to-use zip with the right folder layout, or open an exported zip later to keep editing it.
+
+**Windows:** download `ValheimPackBuilder-windows.zip` from the link above, unzip it and run `ValheimPackBuilder.exe`. No Python needed.
+
+The rest of this page explains how to make a zip by hand.
+
 ## Making a banner zip
 
 A zip can hold one banner or a whole pack. **Each banner is a folder inside the zip**, and the banner's files go inside that folder:
